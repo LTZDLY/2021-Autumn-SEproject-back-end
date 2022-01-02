@@ -1,0 +1,5 @@
+seproject_app/__pycache__
+seproject_app/data
+
+*.pyc
+*.json
