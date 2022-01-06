@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class DishBase(BaseModel):
-    describe: str  # 菜品名
+    name: str  # 菜品名
     description: Optional[str] = None
     flavor: Optional[str] = None
     price: float
@@ -15,6 +15,10 @@ class DishBase(BaseModel):
 class DishCreate(DishBase):
     # store_id: int # 创建订单的菜品不需要商家id，因为创建菜品的商家唯一确定
     pass
+
+
+class DishChange(DishBase):
+    id: int
 
 
 class Dish(DishBase):
@@ -81,15 +85,15 @@ class User(UserBase):
 
 class OrderBase(BaseModel):
     store_id: int
-    totalPrice: int
+    totalPrice: int = 0
 
 
 class OrderCreate(OrderBase):
-    id: int
     countArray: List[DishOrder]
 
 
 class Order(OrderBase):
+    id: int
     shopImg: str
     shopName: str
     orderDesc: str
@@ -120,13 +124,17 @@ class Comment(CommentBase):
 
 class SimpleReply(BaseModel):
     msg: str
+    class Config:
+        orm_mode = True
+
 
 
 class ShopDict(SimpleReply):
     shoplist: List[Dict]
 
 
-class FlavorList(SimpleReply):
+class FlavorList(BaseModel):
+    name: str
     foods: List[Dict]
 
 

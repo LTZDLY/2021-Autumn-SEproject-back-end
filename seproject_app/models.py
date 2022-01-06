@@ -49,7 +49,7 @@ class Dish(Base):
         Integer, primary_key=True, index=True, autoincrement=True, nullable=False
     )
     store_id = Column(Integer, ForeignKey("store.id"), nullable=False)
-    describe = Column(String)
+    name = Column(String)
     flavor = Column(String)
     price = Column(Float)
     description = Column(String)

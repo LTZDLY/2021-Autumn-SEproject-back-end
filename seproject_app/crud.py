@@ -34,8 +34,9 @@ def get_orders(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Order).offset(skip).limit(limit).all()
 
 
-def get_order_by_id(db: Session, id: int):
+def get_order_by_id(db: Session, id: int) -> models.Order:
     return db.query(models.Order).filter(models.Order.id == id).first()
+
 
 def get_orders_by_store_id(db: Session, store_id: int):
     return db.query(models.Order).filter(models.Order.store_id == store_id).all()
@@ -92,9 +93,9 @@ def get_comment_by_order_id(db: Session, order_id: int):
 
 def get_comment_by_store_id(db: Session, store_id: int):
     return (
-        db.query(models.Shop)
-        .join(models.Comment)
-        .filter(models.Shop.id == store_id)
+        db.query(models.Comment)
+        .join(models.Order)
+        .filter(models.Order.store_id == store_id)
         .all()
     )
 
@@ -148,7 +149,7 @@ def get_all_order(db: Session, user_id: int):
     ans = []
     for i in results:
         sql = """
-            SELECT `order-dish`.num, `dish`.describe, `order_status`.comment
+            SELECT `order-dish`.num, `dish`.name, `order_status`.comment
             FROM `order-dish`
             INNER JOIN `dish` ON `dish`.id = `order-dish`.dish_id
             INNER JOIN `order_status` ON `order_status`.order_id = `order-dish`.order_id
@@ -172,7 +173,25 @@ def get_all_order(db: Session, user_id: int):
         ans.append(temp)
     return ans
 
-def change_shop_by_id(db: Session, id: str, shop: schemas.ShopChange):
+
+# def get_comment_by_store_id(db: Session, store_id: int):
+#     return db.query(models.Order).join(models.Order_Status).filter(models.Order.store_id == store_id)
+
+
+def change_shop_by_id(db: Session, id: int, shop: schemas.ShopChange):
     db.query(models.Shop).filter(models.Shop.id == id).update(shop.dict())
     db.commit()
     return db.query(models.Shop).filter(models.Shop.id == id).first()
+
+
+def change_dish_by_id(db: Session, dish_id: int, dish: schemas.DishChange):
+    db.query(models.Dish).filter(models.Dish.id == dish_id).update(dish.dict())
+    db.commit()
+    return db.query(models.Dish).filter(models.Dish.id == dish_id).first()
+
+
+def change_order_status(db: Session, order_id: int):
+    db.query(models.Order_Status).filter(
+        models.Order_Status.order_id == order_id
+    ).update({models.Order_Status.status: (1 - models.Order_Status.status)})
+    db.commit()
