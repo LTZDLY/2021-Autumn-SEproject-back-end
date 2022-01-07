@@ -104,29 +104,34 @@ class CommentBase(BaseModel):
     order_id: int
     user_text: str
     user_score: int
-    user_time: datetime
 
 
 class CommentCreate(CommentBase):
     pass
 
 
+class CommentReply(BaseModel):
+    order_id: int
+    store_text: str
+
+
 class Comment(CommentBase):
     store_text: Optional[str] = None
     store_time: Optional[datetime] = None
+    user_time: Optional[datetime] = None
 
     class Config:
         orm_mode = True
 
 
-######
+###################
 
 
 class SimpleReply(BaseModel):
     msg: str
+
     class Config:
         orm_mode = True
-
 
 
 class ShopDict(SimpleReply):
@@ -152,9 +157,25 @@ class DishItem(BaseModel):
     orderComment: bool
 
 
+class DishSimply(BaseModel):
+    num: int
+    name: str
+
+
 class OrderDict(SimpleReply):
     data: List[DishItem]
 
 
 class CommentDict(SimpleReply):
     data: Comment
+
+
+class OrderShop(BaseModel):
+    order_id: int
+    user_id: int
+    orderPrice: int
+    orderDesc: List[DishSimply]
+    submit_time: datetime
+    finish_time: Optional[datetime] = None
+    status: bool
+    comment: bool

@@ -1,7 +1,4 @@
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql.expression import false, true
-from sqlalchemy.sql.schema import Table
 
 from .database import Base
 

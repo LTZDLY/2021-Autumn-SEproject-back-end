@@ -1,8 +1,7 @@
 from typing import List, Optional
 
 import requests
-from fastapi import (Cookie, Depends, FastAPI, HTTPException, Response,
-                     responses)
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, responses
 from sqlalchemy.orm import Session
 
 from . import crud, models, schemas
@@ -23,13 +22,23 @@ def get_db():
         db.close()
 
 
-@app.get("/getopenid")
+@app.get(
+    "/getopenid",
+    summary="测试用，设置openid",
+    description="直接为cookie设置预设好的openid",
+    tags=["测试"],
+)
 def fun(response: Response):
     response.set_cookie(key="openid", value=testopenid)
     return
 
 
-@app.get("/getshopid")
+@app.get(
+    "/getshopid",
+    summary="测试用，设置shopid",
+    description="直接在cookie上设置接收的shopid",
+    tags=["测试"],
+)
 def fun(shopid: int, response: Response):
     response.set_cookie(key="shopid", value=shopid)
     return
@@ -252,15 +261,17 @@ def get_all_orders(db: Session = Depends(get_db), openid: Optional[str] = Cookie
         raise HTTPException(status_code=401, detail="please login first")
 
     user = crud.get_user_by_openid(db, openid)
-    return schemas.OrderDict(msg="succeed", data=crud.get_all_order(db, user.id))
+    return schemas.OrderDict(
+        msg="succeed", data=crud.get_orders_by_user_id(db, user.id)
+    )
 
 
 @app.get(
     "/api/seproject/getComment",
     response_model=schemas.CommentDict,
-    summary="顾客获取评论",
-    description="返回所选中订单的评论",
-    tags=["顾客"],
+    summary="获取评价",
+    description="返回所选订单的评价",
+    tags=["通用"],
 )
 # 顾客获取评论信息
 def get_comment(order_id: int, db: Session = Depends(get_db)):
@@ -268,6 +279,9 @@ def get_comment(order_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Missing parameter")
 
     db_comment = crud.get_comment_by_order_id(db, order_id)
+    if not db_comment:
+        raise HTTPException(status_code=400, detail="Comment not found")
+
     return schemas.CommentDict(msg="succeed", data=db_comment)
 
 
@@ -418,6 +432,7 @@ def get_shop_dish_info(
         raise HTTPException(status_code=401, detail="please login first")
     return crud.get_dishs_by_store_id(db, shopid)
 
+
 @app.post(
     "/api/seproject/shop/changeShopDishInfo",
     response_model=schemas.Dish,
@@ -438,8 +453,9 @@ def change_shop_dish_info(
         raise HTTPException(status_code=400, detail="You have no permission to do this")
     if not shopid:
         raise HTTPException(status_code=401, detail="please login first")
-    
+
     return crud.change_dish_by_id(db, db_dish.id, dish)
+
 
 @app.get(
     "/api/seproject/shop/changeOrderStatus",
@@ -464,10 +480,10 @@ def change_order_status(
     crud.change_order_status(db, order_id)
     return schemas.SimpleReply(msg="succeed")
 
-'''
+
 @app.get(
     "/api/seproject/shop/getShopOrder",
-    response_model=List[schemas.Order],
+    response_model=List[schemas.OrderShop],
     summary="商家获取所有订单",
     description="返回该商家的所有订单",
     tags=["商家"],
@@ -481,7 +497,6 @@ def get_shop_order(
         raise HTTPException(status_code=401, detail="please login first")
     return crud.get_orders_by_store_id(db, shopid)
 
-'''
 
 @app.get(
     "/api/seproject/shop/getShopComment",
@@ -497,4 +512,34 @@ def get_shop_comment(
 ):
     if not shopid:
         raise HTTPException(status_code=401, detail="please login first")
-    return crud.get_comment_by_store_id(db, shopid)
+    return crud.get_comments_by_store_id(db, shopid)
+
+
+@app.post(
+    "/api/seproject/shop/replyComment",
+    response_model=schemas.Comment,
+    summary="商家回复评论",
+    description="回复评论",
+    tags=["商家"],
+)
+# 商家回复评论
+def reply_comment(
+    comment: schemas.CommentReply,
+    db: Session = Depends(get_db),
+    shopid: Optional[int] = Cookie(None),
+):
+    if not shopid:
+        raise HTTPException(status_code=401, detail="please login first")
+
+    db_comment = crud.get_comment_by_order_id(db, comment.order_id)
+    if db_comment is None:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    db_order = crud.get_order_by_id(db, db_comment.order_id)
+    db_shop = crud.get_shop_by_id(db, shopid)
+    if db_order is None:
+        raise HTTPException(status_code=400, detail="Order not found")
+    if db_order.store_id != db_shop.id:
+        raise HTTPException(status_code=400, detail="You have no permission to do this")
+
+    return crud.change_reply_comment(db, db_order.id, comment)
