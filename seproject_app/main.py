@@ -1,4 +1,4 @@
-import os
+import os, stat
 import shutil
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -11,7 +11,7 @@ from fastapi.params import File
 from sqlalchemy.orm import Session
 
 from . import crud, models, schemas
-from .data.data import address, imgpath, testopenid, wxappid, wxsecret, wxurl
+from .data.data import imgprefix, imgpath, testopenid, wxappid, wxsecret, wxurl
 from .database import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
@@ -166,7 +166,7 @@ def read_shops(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
             "shopImg": None,
         }
         if i.img is not None:
-            d["shopImg"] = f"{address}{i.img}"
+            d["shopImg"] = f"{imgprefix}{i.img}"
         l.append(d)
         pass
     data = schemas.ShopDict(msg="ok", shoplist=l)
@@ -203,7 +203,7 @@ def get_dish_info(store_id: int, db: Session = Depends(get_db)):
                 "Count": 0,
             }
             if i.icon is not None:
-                d["icon"] = f"{address}{i.icon}"
+                d["icon"] = f"{imgprefix}{i.icon}"
             foodlist.append(d)
         temp = []
         for i in h:
@@ -412,7 +412,7 @@ def get_shop_info(phone: int):
         "data": {
             "id": data_raw[0],
             "name": data_raw[1],
-            "address": data_raw[5],
+            "imgprefix": data_raw[5],
             "description": data_raw[4],
         },
     }
@@ -551,19 +551,50 @@ def reply_comment(
     return crud.change_reply_comment(db, db_order.id, comment)
 
 
-@app.post("/test")
-def upload_image(file: UploadFile = File(...)):
-    save_dir = imgpath + "storeImg"
+@app.post(
+    "/api/seproject/shop/upLoadImg",
+    response_model=None,
+    summary="商家上传图片",
+    description="上传图片，type为1时上传的是店铺图片，为2时是菜品图片，此时菜品id为必填",
+    tags=["商家"],
+)
+def upload_image(
+    type: int,
+    dish_id: Optional[int] = None,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    shopid: Optional[int] = Cookie(None),
+):
+    if not shopid:
+        raise HTTPException(status_code=401, detail="please login first")
+    if type == 1:
+        add = "storeImg/"
+    elif type != 2:
+        raise HTTPException(status_code=422, detail="Unknown type")
+    else:
+        if dish_id is None:
+            raise HTTPException(status_code=400, detail="Missing parameter")
+        db_dish = crud.get_dish_by_id(db, dish_id)
+        if db_dish.store_id != shopid:
+            raise HTTPException(status_code=400, detail="You have no permission to do this")
+        add = "dishImg/"
+        
+    save_dir = imgpath + add
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
 
     try:
         suffix = Path(file.filename).suffix
-
         with NamedTemporaryFile(delete=False, suffix=suffix, dir=save_dir) as tmp:
             shutil.copyfileobj(file.file, tmp)
+            os.chmod(tmp.name, stat.S_IRWXO + stat.S_IRWXG + stat.S_IRWXU)
             tmp_file_name = Path(tmp.name).name
     finally:
         file.file.close()
+
+    if type == 1:
+        crud.change_shop_img(db, shopid, add + tmp_file_name)
+    else:
+        crud.change_dish_img(db, dish_id, add + tmp_file_name)
 
     return {"image": f"http://127.0.0.1:8010/assets/{tmp_file_name}"}

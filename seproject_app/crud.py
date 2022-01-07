@@ -247,6 +247,16 @@ def change_dish_by_id(
     return db.query(models.Dish).filter(models.Dish.id == dish_id).first()
 
 
+def change_shop_img(db: Session, shop_id: int, imgaddress: str) -> models.Shop:
+    db.query(models.Shop).filter(models.Shop.id == shop_id).update({models.Shop.img: imgaddress})
+    db.commit()
+
+
+def change_dish_img(db: Session, dish_id: int, imgaddress: str) -> models.Shop:
+    db.query(models.Dish).filter(models.Dish.id == dish_id).update({models.Dish.icon: imgaddress})
+    db.commit()
+
+
 def change_order_status(db: Session, order_id: int):
     db.query(models.Order_Status).filter(
         models.Order_Status.order_id == order_id
