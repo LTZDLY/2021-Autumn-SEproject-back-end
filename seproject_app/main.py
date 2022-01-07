@@ -1,11 +1,17 @@
+import os
+import shutil
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import List, Optional
 
 import requests
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, responses
+from fastapi.datastructures import UploadFile
+from fastapi.params import File
 from sqlalchemy.orm import Session
 
 from . import crud, models, schemas
-from .data.data import address, testopenid
+from .data.data import address, imgpath, testopenid, wxappid, wxsecret, wxurl
 from .database import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
@@ -114,9 +120,9 @@ def read_dishs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 )
 # 顾客wx登录
 def getid(code: str, db: Session = Depends(get_db)):
-    url = "https://api.weixin.qq.com/sns/jscode2session"
-    appid = "wxb5602a69aaaf3ccf"
-    secret = "e03f269d14a9a330c25839d014c2f26a"
+    url = wxurl
+    appid = wxappid
+    secret = wxsecret
     params = {
         "appid": appid,
         "secret": secret,
@@ -543,3 +549,21 @@ def reply_comment(
         raise HTTPException(status_code=400, detail="You have no permission to do this")
 
     return crud.change_reply_comment(db, db_order.id, comment)
+
+
+@app.post("/test")
+def upload_image(file: UploadFile = File(...)):
+    save_dir = imgpath + "storeImg"
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
+
+    try:
+        suffix = Path(file.filename).suffix
+
+        with NamedTemporaryFile(delete=False, suffix=suffix, dir=save_dir) as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            tmp_file_name = Path(tmp.name).name
+    finally:
+        file.file.close()
+
+    return {"image": f"http://127.0.0.1:8010/assets/{tmp_file_name}"}
