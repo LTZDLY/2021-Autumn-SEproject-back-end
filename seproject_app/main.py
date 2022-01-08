@@ -183,7 +183,7 @@ def read_shops(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 # 顾客获取菜品信息
 def get_dish_info(store_id: int, db: Session = Depends(get_db)):
     if not store_id:
-        raise HTTPException(status_code=400, detail="Missing parameter")
+        raise HTTPException(status_code=422, detail="Missing parameter")
     else:
         dishs = crud.get_dishs_by_store_id(db, store_id)
         data = schemas.DishDict(msg="ok", goods=[])
@@ -282,7 +282,7 @@ def get_all_orders(db: Session = Depends(get_db), openid: Optional[str] = Cookie
 # 顾客获取评论信息
 def get_comment(order_id: int, db: Session = Depends(get_db)):
     if not order_id:
-        raise HTTPException(status_code=400, detail="Missing parameter")
+        raise HTTPException(status_code=422, detail="Missing parameter")
 
     db_comment = crud.get_comment_by_order_id(db, order_id)
     if not db_comment:
@@ -340,6 +340,8 @@ def signin(shop: schemas.ShopLogin, response: Response, db: Session = Depends(ge
         raise HTTPException(status_code=400, detail="Shop not found")
     if db_shop.password != shop.password:
         raise HTTPException(status_code=400, detail="Wrong password, try again")
+    if db_shop.img:
+        db_shop.img = imgprefix + db_shop.img
     response.set_cookie(key="shopid", value=db_shop.id)
     return db_shop
 
@@ -436,7 +438,11 @@ def get_shop_dish_info(
 ):
     if not shopid:
         raise HTTPException(status_code=401, detail="please login first")
-    return crud.get_dishs_by_store_id(db, shopid)
+    l = crud.get_dishs_by_store_id(db, shopid)
+    for i in l:
+        if i.icon:
+            i.icon = imgprefix + i.icon
+    return l
 
 
 @app.post(
@@ -553,7 +559,7 @@ def reply_comment(
 
 @app.post(
     "/api/seproject/shop/upLoadImg",
-    response_model=None,
+    response_model=schemas.SimpleReply,
     summary="商家上传图片",
     description="上传图片，type为1时上传的是店铺图片，为2时是菜品图片，此时菜品id为必填",
     tags=["商家"],
@@ -567,13 +573,17 @@ def upload_image(
 ):
     if not shopid:
         raise HTTPException(status_code=401, detail="please login first")
+    db_shop = crud.get_shop_by_id(shopid)
+    if db_shop is None:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    
     if type == 1:
         add = "storeImg/"
     elif type != 2:
         raise HTTPException(status_code=422, detail="Unknown type")
     else:
         if dish_id is None:
-            raise HTTPException(status_code=400, detail="Missing parameter")
+            raise HTTPException(status_code=422, detail="Missing parameter")
         db_dish = crud.get_dish_by_id(db, dish_id)
         if db_dish.store_id != shopid:
             raise HTTPException(status_code=400, detail="You have no permission to do this")
@@ -597,4 +607,4 @@ def upload_image(
     else:
         crud.change_dish_img(db, dish_id, add + tmp_file_name)
 
-    return {"image": f"http://127.0.0.1:8010/assets/{tmp_file_name}"}
+    return schemas.SimpleReply(msg = "succeed")

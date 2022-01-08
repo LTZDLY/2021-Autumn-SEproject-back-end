@@ -9,7 +9,6 @@ class DishBase(BaseModel):
     description: Optional[str] = None
     flavor: Optional[str] = None
     price: float
-    icon: Optional[str] = None
 
 
 class DishCreate(DishBase):
@@ -24,6 +23,7 @@ class DishChange(DishBase):
 class Dish(DishBase):
     id: int
     store_id: int
+    icon: Optional[str] = None
 
     class Config:
         orm_mode = True
@@ -44,7 +44,6 @@ class ShopBase(BaseModel):
     phone: str
     describe: Optional[str] = None
     address: Optional[str] = None
-    img: Optional[str] = None
 
 
 class ShopCreate(ShopBase):
@@ -53,6 +52,7 @@ class ShopCreate(ShopBase):
 
 class Shop(ShopBase):
     id: int
+    img: Optional[str] = None
     # is_active: bool
     # items: List[Dish] = []
 
@@ -65,7 +65,6 @@ class ShopChange(BaseModel):
     password: str
     describe: Optional[str] = None
     address: Optional[str] = None
-    img: Optional[str] = None
 
 
 class UserBase(BaseModel):
