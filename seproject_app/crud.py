@@ -108,6 +108,7 @@ def get_orders_by_user_id(db: Session, user_id: int) -> list:
         s = ""
         for j in res:
             s += f"{j[1]}×{j[0]}, "
+        print(res)
         temp = {
             "order_id": i[0],
             "store_id": i[1],
@@ -175,7 +176,7 @@ def get_orders_by_store_id(db: Session, store_id: int) -> list:
 
 
 def create_user(db: Session, openid: str) -> models.User:
-    db_user = models.User(openid=openid)
+    db_user = models.User(open_id=openid)
     db.add(db_user)
     db.commit()
     db.refresh(db_user)

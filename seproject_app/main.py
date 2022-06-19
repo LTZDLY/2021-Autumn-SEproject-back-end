@@ -1,22 +1,30 @@
-import os, stat
+import json
+import os
 import shutil
+import stat
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import List, Optional
+import unittest
 
 import requests
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, responses
+import uvicorn
+from fastapi import (Cookie, Depends, FastAPI, HTTPException, Response,
+                     responses)
 from fastapi.datastructures import UploadFile
 from fastapi.params import File
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from . import crud, models, schemas
-from .data.data import imgprefix, imgpath, testopenid, wxappid, wxsecret, wxurl
+from .data.data import imgpath, imgprefix, testopenid, wxappid, wxsecret, wxurl
 from .database import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+app = FastAPI(
+    root_path="/seproject"
+)
 
 
 # Dependency
@@ -50,76 +58,15 @@ def fun(shopid: int, response: Response):
     return
 
 
-"""
-@app.post("/shops/", response_model=schemas.Shop)
-def create_shop(shop: schemas.ShopCreate, db: Session = Depends(get_db)):
-    db_shop = crud.get_shop_by_phone(db, phone=shop.phone)
-    if db_shop:
-        raise HTTPException(status_code=400, detail="Phone already registered")
-    return crud.create_shop(db=db, shop=shop)
-
-
-@app.get("/shops", response_model=List[schemas.Shop])
-def read_shops(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    shops = crud.get_shops(db, skip=skip, limit=limit)
-    return shops
-
-
-@app.get("/orders/")
-def read_shops(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    orders = crud.get_orders(db, skip=skip, limit=limit)
-    return orders
-
-
-@app.get("/order_dish/")
-def read_shops(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    orders = crud.get_order_dish(db, skip=skip, limit=limit)
-    return orders
-
-
-@app.get("/order_status/")
-def read_shops(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    orders = crud.get_order_status(db, skip=skip, limit=limit)
-    return orders
-
-
-@app.get("/evlauates/")
-def read_shops(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    evaluates = crud.get_evaluates(db, skip=skip, limit=limit)
-    return evaluates
-
-
-@app.get("/shops/{shop_id}", response_model=schemas.Shop)
-def read_shop(shop_id: int, db: Session = Depends(get_db)):
-    db_shop = crud.get_shop(db, shop_id=shop_id)
-    if db_shop is None:
-        raise HTTPException(status_code=404, detail="Shop not found")
-    return db_shop
-
-
-@app.post("/shops/{shop_id}/dishs/", response_model=schemas.Dish)
-def create_dish_for_shop(
-    shop_id: int, dish: schemas.DishCreate, db: Session = Depends(get_db)
-):
-    return crud.create_shop_dish(db=db, dish=dish, shop_id=shop_id)
-
-
-@app.get("/dishs/", response_model=List[schemas.Dish])
-def read_dishs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    dishs = crud.get_dishs(db, skip=skip, limit=limit)
-    return dishs
-"""
-
-
 @app.get(
     "/api/seproject/getOpenid",
     response_model=schemas.User,
     summary="顾客微信登录",
     description="通过顾客传入的验证码，借助微信提供的api获取到用户id并进行登录",
-    tags=["顾客"],
+    tags=["LoginController"],
 )
 # 顾客wx登录
-def getid(code: str, db: Session = Depends(get_db)):
+def LoginUser(code: str, db: Session = Depends(get_db)):
     url = wxurl
     appid = wxappid
     secret = wxsecret
@@ -139,7 +86,7 @@ def getid(code: str, db: Session = Depends(get_db)):
     openid = data["openid"]
     db_user = crud.get_user_by_openid(db, openid)
     if not db_user:
-        db_user = crud.create_user(db=db, user=openid)
+        db_user = crud.create_user(db=db, openid=openid)
 
     resp = responses.JSONResponse(content={"id": db_user.id})
     resp.set_cookie(key="openid", value=openid)
@@ -151,10 +98,14 @@ def getid(code: str, db: Session = Depends(get_db)):
     response_model=schemas.ShopDict,
     summary="顾客获取店铺信息",
     description="返回所有店铺信息",
-    tags=["顾客"],
+    tags=["GuestOrderController"],
 )
 # 顾客获取店铺信息
-def read_shops(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def GetShops(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    if skip < 0:
+        raise HTTPException(status_code=400, detail="invalid skip")
+    if limit < 0:
+        raise HTTPException(status_code=400, detail="invalid limit")
     shops = crud.get_shops(db, skip=skip, limit=limit)
     l = []
     for i in shops:
@@ -178,10 +129,10 @@ def read_shops(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     response_model=schemas.DishDict,
     summary="顾客获取菜品信息",
     description="返回所选中店铺的所有菜品信息按照菜品种类分类",
-    tags=["顾客"],
+    tags=["GuestOrderController"],
 )
 # 顾客获取菜品信息
-def get_dish_info(store_id: int, db: Session = Depends(get_db)):
+def GetDishInfo(store_id: int, db: Session = Depends(get_db)):
     if not store_id:
         raise HTTPException(status_code=422, detail="Missing parameter")
     else:
@@ -216,14 +167,18 @@ def get_dish_info(store_id: int, db: Session = Depends(get_db)):
 
 
 @app.post(
-    "/api/seproject/createOrder", summary="顾客创建订单", description="生成订单", tags=["顾客"]
+    "/api/seproject/createOrder",
+    summary="顾客创建订单",
+    description="生成订单",
+    tags=["GuestOrderController"],
 )
 # 顾客创建订单
-def create_order(
+def CreateOrder(
     order: schemas.OrderCreate,
     db: Session = Depends(get_db),
     openid: Optional[str] = Cookie(None),
 ):
+    ([{}])
     if not openid:
         raise HTTPException(status_code=401, detail="please login first")
 
@@ -239,9 +194,13 @@ def create_order(
         if dish is None:
             raise HTTPException(status_code=404, detail="Dish not found")
         if dish.store_id != store.id:
-            raise HTTPException(status_code=400, detail="Not a dish in this shop")
+            raise HTTPException(
+                status_code=400, detail="Not a dish in this shop")
         price += dish.price * i.num
 
+    if price == 0:
+        raise HTTPException(
+            status_code=400, detail="Order is empty")
     order.totalPrice = round(price, 2)
     # 订单表内加订单
     order_id = crud.create_order(db, user.id, order)
@@ -259,10 +218,10 @@ def create_order(
     response_model=schemas.OrderDict,
     summary="顾客获取全部订单",
     description="返回顾客创建的所有订单",
-    tags=["顾客"],
+    tags=["GuestCommentController"],
 )
 # 顾客获取自己的全部订单
-def get_all_orders(db: Session = Depends(get_db), openid: Optional[str] = Cookie(None)):
+def GetAllOrders(db: Session = Depends(get_db), openid: Optional[str] = Cookie(None)):
     if not openid:
         raise HTTPException(status_code=401, detail="please login first")
 
@@ -277,10 +236,10 @@ def get_all_orders(db: Session = Depends(get_db), openid: Optional[str] = Cookie
     response_model=schemas.CommentDict,
     summary="获取评价",
     description="返回所选订单的评价",
-    tags=["通用"],
+    tags=["GuestCommentController"],
 )
 # 顾客获取评论信息
-def get_comment(order_id: int, db: Session = Depends(get_db)):
+def GetComment(order_id: int, db: Session = Depends(get_db)):
     if not order_id:
         raise HTTPException(status_code=422, detail="Missing parameter")
 
@@ -296,10 +255,10 @@ def get_comment(order_id: int, db: Session = Depends(get_db)):
     response_model=schemas.SimpleReply,
     summary="顾客创建评论",
     description="创建评论",
-    tags=["顾客"],
+    tags=["GuestCommentController"],
 )
 # 顾客增加评论
-def create_comment(
+def CreateComment(
     comment: schemas.CommentCreate,
     db: Session = Depends(get_db),
     openid: Optional[str] = Cookie(None),
@@ -316,8 +275,11 @@ def create_comment(
     if db_order is None:
         raise HTTPException(status_code=400, detail="Order not found")
     if db_order.user_id != user.id:
-        raise HTTPException(status_code=400, detail="You have no permission to do this")
+        raise HTTPException(
+            status_code=400, detail="You have no permission to do this")
 
+    if not (0 <= comment.user_score <= 5):
+        raise HTTPException(status_code=400, detail="Score is illegal")
     crud.create_comment(db, comment)
     return schemas.SimpleReply(msg="succeed")
 
@@ -331,15 +293,21 @@ def create_comment(
     response_model=schemas.Shop,
     summary="商家登录",
     description="商家输入手机号码和密码进行登录",
-    tags=["商家"],
+    tags=["LoginController"],
 )
 # 商家登录
-def signin(shop: schemas.ShopLogin, response: Response, db: Session = Depends(get_db)):
+def LoginShop(shop: schemas.ShopLogin, response: Response, db: Session = Depends(get_db)):
+    if not shop.phone:
+        raise HTTPException(status_code=400, detail="phone is empty")
+    if not shop.password:
+        raise HTTPException(status_code=400, detail="password is empty")
+
     db_shop = crud.get_shop_by_phone(db, phone=shop.phone)
     if db_shop is None:
         raise HTTPException(status_code=400, detail="Shop not found")
     if db_shop.password != shop.password:
-        raise HTTPException(status_code=400, detail="Wrong password, try again")
+        raise HTTPException(
+            status_code=400, detail="Wrong password, try again")
     if db_shop.img:
         db_shop.img = imgprefix + db_shop.img
     response.set_cookie(key="shopid", value=db_shop.id)
@@ -351,10 +319,19 @@ def signin(shop: schemas.ShopLogin, response: Response, db: Session = Depends(ge
     response_model=schemas.Shop,
     summary="商家注册",
     description="商家输入信息进行注册",
-    tags=["商家"],
+    tags=["LoginController"],
 )
 # 商家注册
-def create_shop(shop: schemas.ShopCreate, db: Session = Depends(get_db)):
+def NewUser(shop: schemas.ShopCreate, db: Session = Depends(get_db)):
+    if not shop.phone:
+        raise HTTPException(status_code=400, detail="phone is empty")
+    if not shop.password:
+        raise HTTPException(status_code=400, detail="password is empty")
+    if not shop.name:
+        raise HTTPException(status_code=400, detail="name is empty")
+    if len(shop.phone) != 11 or shop.phone[0] != '1':
+        raise HTTPException(
+            status_code=400, detail="Phone number format error")
     db_shop = crud.get_shop_by_phone(db, phone=shop.phone)
     if db_shop:
         raise HTTPException(status_code=400, detail="Phone already registered")
@@ -366,10 +343,10 @@ def create_shop(shop: schemas.ShopCreate, db: Session = Depends(get_db)):
     response_model=schemas.Shop,
     summary="商家修改信息",
     description="商家输入信息进行修改",
-    tags=["商家"],
+    tags=["ShopInfoController"],
 )
 # 商家修改信息
-def change_shop(
+def ChangeShop(
     shop: schemas.ShopChange,
     db: Session = Depends(get_db),
     shopid: Optional[int] = Cookie(None),
@@ -385,10 +362,10 @@ def change_shop(
     response_model=schemas.Dish,
     summary="商家添加菜品",
     description="商家输入菜品信息添加菜品",
-    tags=["商家"],
+    tags=["ShopDishController"],
 )
 # 商家添加菜品
-def create_dish(
+def CreateDish(
     dish: schemas.DishCreate,
     db: Session = Depends(get_db),
     shopid: Optional[int] = Cookie(None),
@@ -429,10 +406,10 @@ def get_shop_info(phone: int):
     response_model=List[schemas.Dish],
     summary="商家获取所有菜品信息",
     description="返回所有菜品信息",
-    tags=["商家"],
+    tags=["ShopDishController"],
 )
 # 商家获取所有的菜品信息
-def get_shop_dish_info(
+def GetShopDishInfo(
     db: Session = Depends(get_db),
     shopid: Optional[int] = Cookie(None),
 ):
@@ -450,10 +427,10 @@ def get_shop_dish_info(
     response_model=schemas.Dish,
     summary="商家更改菜品信息",
     description="更改菜品信息",
-    tags=["商家"],
+    tags=["ShopDishController"],
 )
 # 商家更改所有的菜品信息
-def change_shop_dish_info(
+def ChangeShopDishInfo(
     dish: schemas.DishChange,
     db: Session = Depends(get_db),
     shopid: Optional[int] = Cookie(None),
@@ -462,7 +439,8 @@ def change_shop_dish_info(
     if db_dish is None:
         raise HTTPException(status_code=404, detail="Dish not found")
     if db_dish.store_id != shopid:
-        raise HTTPException(status_code=400, detail="You have no permission to do this")
+        raise HTTPException(
+            status_code=400, detail="You have no permission to do this")
     if not shopid:
         raise HTTPException(status_code=401, detail="please login first")
 
@@ -474,10 +452,10 @@ def change_shop_dish_info(
     response_model=schemas.SimpleReply,
     summary="商家修改订单状态",
     description="修改订单状态",
-    tags=["商家"],
+    tags=["ShopOrderController"],
 )
 # 商家修改订单状态
-def change_order_status(
+def ChangeOrderStatus(
     order_id: int,
     db: Session = Depends(get_db),
     shopid: Optional[int] = Cookie(None),
@@ -488,7 +466,8 @@ def change_order_status(
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order not found")
     if db_order.store_id != shopid:
-        raise HTTPException(status_code=400, detail="You have no permission to do this")
+        raise HTTPException(
+            status_code=400, detail="You have no permission to do this")
     crud.change_order_status(db, order_id)
     return schemas.SimpleReply(msg="succeed")
 
@@ -498,10 +477,10 @@ def change_order_status(
     response_model=List[schemas.OrderShop],
     summary="商家获取所有订单",
     description="返回该商家的所有订单",
-    tags=["商家"],
+    tags=["ShopOrderController"],
 )
 # 商家获取所有订单
-def get_shop_order(
+def GetShopOrder(
     db: Session = Depends(get_db),
     shopid: Optional[int] = Cookie(None),
 ):
@@ -515,10 +494,10 @@ def get_shop_order(
     response_model=List[schemas.Comment],
     summary="商家获取所有评价",
     description="返回商家的所有评价",
-    tags=["商家"],
+    tags=["ShopCommentController"],
 )
 # 商家获取所有评价
-def get_shop_comment(
+def GetShopComment(
     db: Session = Depends(get_db),
     shopid: Optional[int] = Cookie(None),
 ):
@@ -532,10 +511,10 @@ def get_shop_comment(
     response_model=schemas.Comment,
     summary="商家回复评论",
     description="回复评论",
-    tags=["商家"],
+    tags=["ShopCommentController"],
 )
 # 商家回复评论
-def reply_comment(
+def ReplyComment(
     comment: schemas.CommentReply,
     db: Session = Depends(get_db),
     shopid: Optional[int] = Cookie(None),
@@ -552,7 +531,8 @@ def reply_comment(
     if db_order is None:
         raise HTTPException(status_code=400, detail="Order not found")
     if db_order.store_id != db_shop.id:
-        raise HTTPException(status_code=400, detail="You have no permission to do this")
+        raise HTTPException(
+            status_code=400, detail="You have no permission to do this")
 
     return crud.change_reply_comment(db, db_order.id, comment)
 
@@ -562,9 +542,9 @@ def reply_comment(
     response_model=schemas.SimpleReply,
     summary="商家上传图片",
     description="上传图片，type为1时上传的是店铺图片，为2时是菜品图片，此时菜品id为必填",
-    tags=["商家"],
+    tags=["ShopInfoController"],
 )
-def upload_image(
+def UploadImage(
     type: int,
     dish_id: Optional[int] = None,
     file: UploadFile = File(...),
@@ -576,7 +556,7 @@ def upload_image(
     db_shop = crud.get_shop_by_id(shopid)
     if db_shop is None:
         raise HTTPException(status_code=404, detail="Shop not found")
-    
+
     if type == 1:
         add = "storeImg/"
     elif type != 2:
@@ -586,9 +566,10 @@ def upload_image(
             raise HTTPException(status_code=422, detail="Missing parameter")
         db_dish = crud.get_dish_by_id(db, dish_id)
         if db_dish.store_id != shopid:
-            raise HTTPException(status_code=400, detail="You have no permission to do this")
+            raise HTTPException(
+                status_code=400, detail="You have no permission to do this")
         add = "dishImg/"
-        
+
     save_dir = imgpath + add
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
@@ -607,4 +588,70 @@ def upload_image(
     else:
         crud.change_dish_img(db, dish_id, add + tmp_file_name)
 
-    return schemas.SimpleReply(msg = "succeed")
+    return schemas.SimpleReply(msg="succeed")
+
+
+# 声明一个 TestClient，把 FastAPI() 实例对象传进去
+client = TestClient(app)
+
+with open('./seproject_app/testsedata.json', 'r', encoding='utf8')as fp:
+    data = json.load(fp)
+_url = "https://api.shinoai.com/seproject/"
+
+
+class Test_Tq(unittest.TestCase):
+    def setUp(self):
+        # print("开始")
+        pass
+
+    def tearDown(self):
+        # print("结束")
+        pass
+
+    def test01(self):
+        print()
+        n = 'test1'
+        # 接口地址
+        url = _url + 'api/seproject/getOpenid'
+        # 构造数据
+        t = data[n]
+        for i in t:
+            params = i['params']
+            re = i['return']
+            r = requests.get(url, params=params).json()
+            print(f"测试输入：{params}，期望输出：{re}")
+            self.assertEqual(r[re['key']], re['value'])
+            # self.assertEqual(r["reason"],"failed!")
+
+    def test02(self):
+        print()
+        n = 'test2'
+        # 接口地址
+        url = _url + 'api/seproject/shop/signIn'
+        # 构造数据
+        t = data[n]
+        for i in t:
+            params = i['params']
+            re = i['return']
+            r = requests.post(url, json=params).json()
+            print(f"测试输入：{params}，期望输出：{re['key']}: {re['value']}")
+            self.assertEqual(r[re['key']], re['value'])
+            # self.assertEqual(r["reason"],"failed!")
+
+    # def test03(self):
+    #     n = 'test3'
+    #     # 接口地址
+    #     url = _url + 'api/seproject/shop/signUp'
+    #     # 构造数据
+    #     t = data[n]
+    #     for i in t:
+    #         params = i['params']
+    #         re = i['return']
+    #         r = requests.post(url, json=params).json()
+    #         print(f"测试输入：{params}，期望输出：{re['key']}: {re['value']}")
+    #         self.assertEqual(r[re['key']], re['value'])
+    #         # self.assertEqual(r["reason"],"failed!")
+
+
+if __name__ == '__main__':
+    uvicorn.run(app="37_pytest:app", reload=True, host="127.0.0.1", port=8080)
